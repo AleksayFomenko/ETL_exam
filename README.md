@@ -36,17 +36,21 @@
 ### 1.2 Подготовка таблицы transactions_v2
 
 ```sql
-CREATE TABLE transactions_v2 (
-    call_id            Utf8,
-    call_time          Datetime,
-    client_id          Utf8,
-    region_code        Utf8,
-    campaign_type      Utf8,
-    call_status        Utf8,
-    client_response    Utf8,
-    duration_sec       Int32,
-    follow_up_required Bool,
-    PRIMARY KEY (call_id)
+CREATE TABLE reksadana_di_indonesia (
+    id              Int64,
+    Tahun           Int16,
+    Bulan           Int16,
+    Tanggal         Int16,
+    TanggalLengkap  Date,
+    NamaMI          Utf8,
+    NamaBK          Utf8,
+    ProdukRD        Utf8,
+    TipeRD          Utf8,
+    Denominasi      Utf8,
+    NABDalamRupiah  Decimal(20,2),
+    UnitPenyertaan  Decimal(20,2),
+    NABperUnit      Decimal(20,4),
+    PRIMARY KEY (id)
 );
 ```
 
