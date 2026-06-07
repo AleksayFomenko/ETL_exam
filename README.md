@@ -29,7 +29,6 @@ CREATE TABLE reksadana_di_indonesia (
     Tahun           Int16,
     Bulan           Int16,
     Tanggal         Int16,
-    TanggalLengkap  STRING,
     NamaMI          STRING,
     NamaBK          STRING,
     ProdukRD        STRING,
