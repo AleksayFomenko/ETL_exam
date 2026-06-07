@@ -53,7 +53,7 @@ CREATE TABLE mental_health_survey (
 
 ### 1.3 Создание трансфера в Object Storage
 
-![Настройка трансфера](screens/task1_3.png)
+![Настройка трансфера](screens/task1_33.png)
 
 ### 1.4 Проверка работоспособности
 
