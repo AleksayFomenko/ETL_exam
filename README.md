@@ -19,7 +19,7 @@
 
 ### 1.1 Создание БД Yandex DataBase
 
-![Создание YDB](screens/task1_1)
+![Создание YDB](screens/task1_1.png)
 
 ### 1.2 Подготовка таблицы transactions_v2
 
