@@ -1,6 +1,6 @@
 # ETL-процессы. Модуль 4 (экзамен)
 
-**Студент:** Фамилия Имя  
+**Студент:** Фоменко Алексей  
 **Преподаватель:** Артём Озерков  
 **Дисциплина:** ETL-процессы  
 **Время выполнения:** 10 часов  
@@ -15,23 +15,11 @@
 
 ---
 
-## Оценка
-
-| Задание | Описание | Баллы |
-|---------|----------|-------|
-| 1 | Yandex DataTransfer | 2 |
-| 2 | Автоматизация через Apache Airflow | 2 |
-| 3 | Apache Kafka + PySpark | 3 |
-| 4 | Визуализация в DataLens | 1 |
-| | **Итого** | **8** |
-
----
-
 ## Задание 1. Yandex DataTransfer
 
 ### 1.1 Создание БД Yandex DataBase
 
-![Создание YDB](screens/task1_ydb_create.png)
+![Создание YDB](screens/task1_1)
 
 ### 1.2 Подготовка таблицы transactions_v2
 
@@ -41,12 +29,12 @@ CREATE TABLE reksadana_di_indonesia (
     Tahun           Int16,
     Bulan           Int16,
     Tanggal         Int16,
-    TanggalLengkap  Date,
-    NamaMI          Utf8,
-    NamaBK          Utf8,
-    ProdukRD        Utf8,
-    TipeRD          Utf8,
-    Denominasi      Utf8,
+    TanggalLengkap  STRING,
+    NamaMI          STRING,
+    NamaBK          STRING,
+    ProdukRD        STRING,
+    TipeRD          STRING,
+    Denominasi      STRING,
     NABDalamRupiah  Decimal(20,2),
     UnitPenyertaan  Decimal(20,2),
     NABperUnit      Decimal(20,4),
@@ -54,15 +42,15 @@ CREATE TABLE reksadana_di_indonesia (
 );
 ```
 
-![Таблица в YDB](screens/task1_ydb_table.png)
+![Таблица в YDB](screens/task1_2.png)
 
 ### 1.3 Создание трансфера в Object Storage
 
-![Настройка трансфера](screens/task1_transfer_setup.png)
+![Настройка трансфера](screens/task1_3.png)
 
 ### 1.4 Проверка работоспособности
 
-![Результат трансфера](screens/task1_transfer_result.png)
+![Результат трансфера](screens/task1_4.png)
 
 ---
 
@@ -70,7 +58,7 @@ CREATE TABLE reksadana_di_indonesia (
 
 ### 2.1 Подготовка инфраструктуры
 
-![Инфраструктура](screens/task2_infra.png)
+![Инфраструктура](screens/task2_1.png)
 
 ### 2.2 PySpark-задание
 
@@ -78,7 +66,7 @@ CREATE TABLE reksadana_di_indonesia (
 # код PySpark-задания
 ```
 
-![PySpark задание](screens/task2_pyspark_job.png)
+![PySpark задание](screens/task2_2.png)
 
 ### 2.3 DAG-файл
 
@@ -86,11 +74,11 @@ CREATE TABLE reksadana_di_indonesia (
 # код DAG
 ```
 
-![DAG в Airflow](screens/task2_dag.png)
+![DAG в Airflow](screens/task2_3.png)
 
 ### 2.4 Результат выполнения
 
-![Результат DAG](screens/task2_dag_result.png)
+![Результат DAG](screens/task2_4t.png)
 
 ---
 
@@ -98,7 +86,7 @@ CREATE TABLE reksadana_di_indonesia (
 
 ### 3.1 Архитектура
 
-![Архитектура](screens/task3_architecture.png)
+![Архитектура](screens/task3_1.png)
 
 ### 3.2 Чтение топика Kafka
 
@@ -106,7 +94,7 @@ CREATE TABLE reksadana_di_indonesia (
 # код чтения топика
 ```
 
-![Kafka PySpark](screens/task3_pyspark.png)
+![Kafka PySpark](screens/task3_2.png)
 
 ### 3.3 Разворачивание JSON в плоский вид
 
@@ -114,26 +102,14 @@ CREATE TABLE reksadana_di_indonesia (
 # flatten JSON
 ```
 
-![Плоская таблица](screens/task3_flatten_result.png)
+![Плоская таблица](screens/task3_3.png)
 
 ---
 
 ## Задание 4. Визуализация в DataLens
 
-![Дашборд DataLens](screens/task4_dashboard.png)
+![Дашборд DataLens](screens/task4_1.png)
 
 ---
 
-## Структура репозитория
 
-```
-├── screens/
-├── sql/
-│   ├── task1_create_table.yql
-│   └── task3_flatten.sql
-├── src/
-│   ├── pyspark_job.py
-│   ├── dag.py
-│   └── kafka_spark_job.py
-└── README.md
-```
