@@ -24,20 +24,28 @@
 ### 1.2 Подготовка таблицы transactions_v2
 
 ```sql
-CREATE TABLE reksadana_di_indonesia (
-    id              Int64,
-    Tahun           Int16,
-    Bulan           Int16,
-    Tanggal         Int16,
-    NamaMI          STRING,
-    NamaBK          STRING,
-    ProdukRD        STRING,
-    TipeRD          STRING,
-    Denominasi      STRING,
-    NABDalamRupiah  Decimal(20,2),
-    UnitPenyertaan  Decimal(20,2),
-    NABperUnit      Decimal(20,4),
-    PRIMARY KEY (id)
+CREATE TABLE mental_health_survey (
+    participant_id                Utf8 NOT NULL,
+    age                           Uint32,
+    gender                        Utf8,
+    country                       Utf8,
+    occupation                    Utf8,
+    work_hours_per_week           Uint32,
+    screen_time_hours             Double,
+    sleep_hours                   Double,
+    sleep_quality                 Utf8,
+    exercise_frequency            Utf8,
+    stress_score                  Uint32,
+    anxiety_score                 Uint32,
+    depression_score              Uint32,
+    social_support                Utf8,
+    therapy_history               Bool,
+    family_history_mental_illness Bool,
+    academic_or_job_pressure      Uint32,
+    financial_stress_score        Uint32,
+    mental_health_risk            Utf8,
+    survey_date                   Datetime,
+    PRIMARY KEY (participant_id)
 );
 ```
 
