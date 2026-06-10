@@ -65,20 +65,109 @@ CREATE TABLE mental_health_survey (
 
 ### 2.1 Подготовка инфраструктуры
 
-![Инфраструктура](screens/task2_1.png)
-
+![airflow](screens/task2_1.png)
+![bucket](screens/task2_2.png)
 ### 2.2 PySpark-задание
 
 ```python
-# код PySpark-задания
-```
+from pyspark.sql.types import *
+from pyspark.sql import SparkSession
 
-![PySpark задание](screens/task2_2.png)
+spark = SparkSession.builder \
+    .appName("create-table") \
+    .enableHiveSupport() \
+    .getOrCreate()
+
+schema = StructType([
+    StructField('Appid', IntegerType(), True),
+    StructField('Name', StringType(), True),
+    StructField('Type', StringType(), True),
+    StructField('ReleaseDate', StringType(), True),
+    StructField('Genres', StringType(), True),
+    StructField('Developers', StringType(), True),
+    StructField('Publishers', StringType(), True),
+    StructField('Description', StringType(), True),
+    StructField('price', StringType(), True),
+    StructField('Thumbnail', StringType(), True),
+])
+
+df = spark.read \
+    .option("header", "true") \
+    .option("multiLine", "true") \
+    .option("quote", '"') \
+    .option("escape", '"') \
+    .schema(schema) \
+    .csv("s3a://bucketforairflow/data/steam.csv")
+
+df.write.mode("overwrite").option("path", "s3a://bucketforairflow/BTCUSTD").saveAsTable("BTCUSTD")
+```
 
 ### 2.3 DAG-файл
 
 ```python
-# код DAG
+import uuid
+import datetime
+from airflow import DAG
+from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.yandex.operators.yandexcloud_dataproc import (
+    DataprocCreateClusterOperator,
+    DataprocCreatePysparkJobOperator,
+    DataprocDeleteClusterOperator,
+)
+
+
+YC_DP_AZ = 'ru-central1-b'
+YC_DP_SSH_PUBLIC_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7fZqwPCYwjP9dVjC2IaNKZhOyZHcmVDqhaZTwbylhZVRliDhw4QNlDxtNUE1HVgboKeefPdcDB4pfg5+AxRVihSiu21Rixv4SEMWYLyH+NntUotCmmF6OyXkBmcc/BMg/J6gLROrbldjtPzOVF4QYHgX12KUkgVxpUcqg32JpIcjTfl0eL3VEUp2c7nmbPImJCJdsPpDtbSCmkh35sV1oMUmikNOA6MdXQwQv0Eec9jZftug0Qpr+u4gD7EKzsna9LMn/jmhiFLtZSrU6NfUb04YRTZrt15a9KGPOHhrAB9Iv1UVkHzy302432nwahwRcTzBMBrGid+ndDP+KHnUl6MnzRjkWOuROMwhPvukItwJHmDeBKazQORPswsUH6ywnsJz945kEu5px+XdxCE2FO5PGUQwJcvghhlZOS5+vmb+P5rzkv6EvJTZSjWgZJsckaML74wQ0nA0VMERU0eDQOsi4H+5dLbJuJFMlvdl+lHL8ZSucJhMNkgUD7iL2I5s= alex@MacBook-Pro-Aleksej.local'
+YC_DP_SUBNET_ID = 'e2la2isn0alfco9839r5'
+YC_DP_SA_ID = 'ajeaoikom0jk8615pqg7'
+YC_DP_METASTORE_URI = '10.128.0.3'   
+YC_BUCKET = 'bucketforairflow'
+
+
+with DAG(
+        'DATA_INGEST',
+        schedule='@hourly',
+        tags=['data-processing-and-airflow'],
+        start_date=datetime.datetime.now(),
+        max_active_runs=1,
+        catchup=False
+) as ingest_dag:
+    create_spark_cluster = DataprocCreateClusterOperator(
+        task_id='dp-cluster-create-task',
+        cluster_name=f'tmp-dp-{uuid.uuid4()}',
+        cluster_description='Временный кластер для выполнения PySpark-задания под оркестрацией Managed Service for Apache Airflow™',
+        ssh_public_keys=YC_DP_SSH_PUBLIC_KEY,
+        service_account_id=YC_DP_SA_ID,
+        subnet_id=YC_DP_SUBNET_ID,
+        s3_bucket=YC_BUCKET,
+        zone=YC_DP_AZ,
+        cluster_image_version='2.1',
+        masternode_resource_preset='s2.small',
+        masternode_disk_type='network-ssd',
+        masternode_disk_size=20,
+        computenode_resource_preset='s2.small',   
+        computenode_disk_type='network-ssd',
+        computenode_disk_size=20,                  
+        computenode_count=1,                       
+        computenode_max_hosts_count=3, 
+        services=['YARN', 'SPARK'],
+        datanode_count=0,
+        properties={
+            'spark:spark.hive.metastore.uris': f'thrift://{YC_DP_METASTORE_URI}:9083',
+        },
+    )
+
+    poke_spark_processing = DataprocCreatePysparkJobOperator(
+        task_id='dp-cluster-pyspark-task',
+        main_python_file_uri=f's3a://{YC_BUCKET}/scripts/create-table.py',
+    )
+
+    delete_spark_cluster = DataprocDeleteClusterOperator(
+        task_id='dp-cluster-delete-task',
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
+    create_spark_cluster >> poke_spark_processing >> delete_spark_cluster
 ```
 
 ![DAG в Airflow](screens/task2_3.png)
