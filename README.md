@@ -66,6 +66,7 @@ CREATE TABLE mental_health_survey (
 ### 2.1 Подготовка инфраструктуры
 
 ![airflow](screens/task2_1.png)
+
 ![bucket](screens/task2_2.png)
 ### 2.2 PySpark-задание
 
