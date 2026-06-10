@@ -188,21 +188,291 @@ with DAG(
 
 ![Архитектура](screens/task3_1.png)
 
-### 3.2 Чтение топика Kafka
+### 3.2 Загрузка в Kafka
 
 ```python
-# код чтения топика
+#!/usr/bin/env python3
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
+BOOTSTRAP = "rc1b-34813ohejg348rd6.mdb.yandexcloud.net:9091"
+TOPIC = "dataproc-kafka-topic"
+USER = "user1"
+PASSWORD = "password1"
+SRC = "s3a://dataproc-buck/songs.json"
+
+
+def main():
+    spark = SparkSession.builder.appName("songs-kafka-write-app").getOrCreate()
+    raw = (spark.read.option("multiLine", "true").json(SRC))
+    if "root" in raw.columns:
+        df = raw.select(F.explode(F.col("root")).alias("song"))
+    else:
+        df = raw.select(F.struct(*raw.columns).alias("song"))
+    msgs = df.select(F.to_json(F.col("song")).alias("value"))
+    msgs.write.format("kafka")\
+        .option("kafka.bootstrap.servers", BOOTSTRAP)\
+        .option("topic", TOPIC)\
+        .option("kafka.security.protocol", "SASL_SSL")\
+        .option("kafka.sasl.mechanism", "SCRAM-SHA-512")\
+        .option("kafka.sasl.jaas.config",
+                "org.apache.kafka.common.security.scram.ScramLoginModule required "
+                f"username={USER}"
+                "password={PASSWORD}" 
+                ";") \
+        .save()
+
+if __name__ == "__main__":
+    main()
 ```
 
-![Kafka PySpark](screens/task3_2.png)
 
-### 3.3 Разворачивание JSON в плоский вид
+### 3.3 Чтение из топика и разворачивание JSON в плоский вид (пакетная обработка)
 
 ```python
-# flatten JSON
+#!/usr/bin/env python3
+import ast
+import json
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import (StructType, StructField, StringType,
+                               IntegerType, ArrayType)
+
+BOOTSTRAP = "rc1b-34813ohejg348rd6.mdb.yandexcloud.net:9091"
+TOPIC = "dataproc-kafka-topic"
+USER = "user1"
+PASSWORD = "password1"
+OUT = "s3a://dataproc-buck/songs-read-batch-output"
+
+SONG_SCHEMA = StructType([
+    StructField("Album", StringType()),
+    StructField("Album URL", StringType()),
+    StructField("Artist", StringType()),
+    StructField("Featured Artists", StringType()),
+    StructField("Lyrics", StringType()),
+    StructField("Media", StringType()),
+    StructField("Rank", IntegerType()),
+    StructField("Release Date", StringType()),
+    StructField("Song Title", StringType()),
+    StructField("Song URL", StringType()),
+    StructField("Writers", StringType()),
+    StructField("Year", IntegerType()),
+])
+WRITER_SCHEMA = ArrayType(StructType([
+    StructField("id", StringType()), StructField("name", StringType()),
+    StructField("url", StringType()), StructField("is_verified", StringType())]))
+MEDIA_SCHEMA = ArrayType(StructType([
+    StructField("provider", StringType()), StructField("type", StringType()),
+    StructField("url", StringType()), StructField("native_uri", StringType())]))
+ 
+ 
+def _py_to_json(s, keys):
+    if s is None:
+        return None
+    try:
+        obj = ast.literal_eval(s)
+    except (ValueError, SyntaxError):
+        return None
+    if not isinstance(obj, list):
+        return None
+    out = [{k: (str(it[k]) if k in it and it[k] is not None else None) for k in keys}
+           for it in obj if isinstance(it, dict)]
+    return json.dumps(out)
+ 
+ 
+def main():
+    spark = SparkSession.builder.appName("songs-kafka-read-batch-app").getOrCreate()
+    writers_udf = F.udf(lambda s: _py_to_json(s, ["id", "name", "url", "is_verified"]), StringType())
+    media_udf = F.udf(lambda s: _py_to_json(s, ["provider", "type", "url", "native_uri"]), StringType())
+    df = (spark.read.format("kafka")
+        .option("kafka.bootstrap.servers", BOOTSTRAP)
+        .option("subscribe", TOPIC)
+        .option("kafka.security.protocol", "SASL_SSL")
+        .option("kafka.sasl.mechanism", "SCRAM-SHA-512")
+        .option("kafka.sasl.jaas.config",
+                "org.apache.kafka.common.security.scram.ScramLoginModule required "
+                f"username={USER} password={PASSWORD} ;")
+        .option("startingOffsets", "earliest")
+        .load()
+        .selectExpr("CAST(value AS STRING)")
+        .where(F.col("value").isNotNull()))
+    parsed = (df
+        .select(F.from_json(F.col("value"), SONG_SCHEMA).alias("s"))
+        .where(F.col("s").isNotNull())
+        .select(
+            F.col("s.Album").alias("album"),
+            F.col("s.`Album URL`").alias("album_url"),
+            F.col("s.Artist").alias("artist"),
+            F.col("s.`Featured Artists`").alias("featured_artists"),
+            F.col("s.Lyrics").alias("lyrics"),
+            F.col("s.Media").alias("media_raw"),
+            F.col("s.Rank").alias("rank"),
+            F.col("s.`Release Date`").alias("release_date"),
+            F.col("s.`Song Title`").alias("song_title"),
+            F.col("s.`Song URL`").alias("song_url"),
+            F.col("s.Writers").alias("writers_raw"),
+            F.col("s.Year").alias("year"))
+        .withColumn("writers_arr", F.from_json(writers_udf(F.col("writers_raw")), WRITER_SCHEMA))
+        .withColumn("media_arr", F.from_json(media_udf(F.col("media_raw")), MEDIA_SCHEMA)))
+    flat = (parsed
+        .withColumn("writer", F.explode_outer(F.col("writers_arr")))
+        .withColumn("media", F.explode_outer(F.col("media_arr")))
+        .select(
+            "album", "album_url", "artist", "song_title", "song_url",
+            "rank", "release_date", "year", "featured_artists",
+            F.length("lyrics").alias("lyrics_len"),
+            F.col("writer.id").alias("writer_id"),
+            F.col("writer.name").alias("writer_name"),
+            F.col("writer.url").alias("writer_url"),
+            F.col("media.provider").alias("media_provider"),
+            F.col("media.type").alias("media_type"),
+            F.col("media.url").alias("media_url")))
+    (flat.write.mode("overwrite")
+        .option("header", "true")
+        .option("quote", '"')
+        .option("escape", '"')
+        .option("quoteAll", "true")
+        .csv(OUT))
+    spark.stop()
+ 
+ 
+if __name__ == "__main__":
+    main()
 ```
 
-![Плоская таблица](screens/task3_3.png)
+![Результат в бакете](screens/task3_3.png)
+
+### 3.4 Чтение из топика и разворачивание JSON в плоский вид (потоковая обработка)
+
+```python
+#!/usr/bin/env python3
+import ast
+import json
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import (StructType, StructField, StringType,
+                               IntegerType, ArrayType)
+
+BOOTSTRAP = "rc1b-34813ohejg348rd6.mdb.yandexcloud.net:9091"
+TOPIC = "dataproc-kafka-topic"
+USER = "user1"
+PASSWORD = "password1"
+OUT = "s3a://dataproc-buck/songs-read-stream-output-csv"
+
+SONG_SCHEMA = StructType([
+    StructField("Album", StringType()),
+    StructField("Album URL", StringType()),
+    StructField("Artist", StringType()),
+    StructField("Featured Artists", StringType()),
+    StructField("Lyrics", StringType()),
+    StructField("Media", StringType()),
+    StructField("Rank", IntegerType()),
+    StructField("Release Date", StringType()),
+    StructField("Song Title", StringType()),
+    StructField("Song URL", StringType()),
+    StructField("Writers", StringType()),
+    StructField("Year", IntegerType()),
+])
+WRITER_SCHEMA = ArrayType(StructType([
+    StructField("id", StringType()), StructField("name", StringType()),
+    StructField("url", StringType()), StructField("is_verified", StringType())]))
+MEDIA_SCHEMA = ArrayType(StructType([
+    StructField("provider", StringType()), StructField("type", StringType()),
+    StructField("url", StringType()), StructField("native_uri", StringType())]))
+
+
+def _py_to_json(s, keys):
+    if s is None:
+        return None
+    try:
+        obj = ast.literal_eval(s)
+    except (ValueError, SyntaxError):
+        return None
+    if not isinstance(obj, list):
+        return None
+    out = [{k: (str(it[k]) if k in it and it[k] is not None else None) for k in keys}
+           for it in obj if isinstance(it, dict)]
+    return json.dumps(out)
+
+
+def main():
+    spark = SparkSession.builder.appName("songs-kafka-read-stream-app").getOrCreate()
+    writers_udf = F.udf(lambda s: _py_to_json(s, ["id", "name", "url", "is_verified"]), StringType())
+    media_udf = F.udf(lambda s: _py_to_json(s, ["provider", "type", "url", "native_uri"]), StringType())
+
+    query = (spark.readStream.format("kafka")
+        .option("kafka.bootstrap.servers", BOOTSTRAP)
+        .option("subscribe", TOPIC)
+        .option("kafka.security.protocol", "SASL_SSL")
+        .option("kafka.sasl.mechanism", "SCRAM-SHA-512")
+        .option("kafka.sasl.jaas.config",
+                "org.apache.kafka.common.security.scram.ScramLoginModule required "
+                f"username={USER} password={PASSWORD} ;")
+        .option("startingOffsets", "earliest")
+        .load()
+        .selectExpr("CAST(value AS STRING)")
+        .where(F.col("value").isNotNull())
+        .writeStream
+        .trigger(once=True)
+        .queryName("received_messages")
+        .format("memory")
+        .start())
+
+    query.awaitTermination()
+
+    raw = spark.sql("select value from received_messages")
+
+    parsed = (raw
+        .select(F.from_json(F.col("value"), SONG_SCHEMA).alias("s"))
+        .where(F.col("s").isNotNull())
+        .select(
+            F.col("s.Album").alias("album"),
+            F.col("s.`Album URL`").alias("album_url"),
+            F.col("s.Artist").alias("artist"),
+            F.col("s.`Featured Artists`").alias("featured_artists"),
+            F.col("s.Lyrics").alias("lyrics"),
+            F.col("s.Media").alias("media_raw"),
+            F.col("s.Rank").alias("rank"),
+            F.col("s.`Release Date`").alias("release_date"),
+            F.col("s.`Song Title`").alias("song_title"),
+            F.col("s.`Song URL`").alias("song_url"),
+            F.col("s.Writers").alias("writers_raw"),
+            F.col("s.Year").alias("year"))
+        .withColumn("writers_arr", F.from_json(writers_udf(F.col("writers_raw")), WRITER_SCHEMA))
+        .withColumn("media_arr", F.from_json(media_udf(F.col("media_raw")), MEDIA_SCHEMA)))
+    flat = (parsed
+        .withColumn("writer", F.explode_outer(F.col("writers_arr")))
+        .withColumn("media", F.explode_outer(F.col("media_arr")))
+        .select(
+            "album", "album_url", "artist", "song_title", "song_url",
+            "rank", "release_date", "year", "featured_artists",
+            F.length("lyrics").alias("lyrics_len"),
+            F.col("writer.id").alias("writer_id"),
+            F.col("writer.name").alias("writer_name"),
+            F.col("writer.url").alias("writer_url"),
+            F.col("media.provider").alias("media_provider"),
+            F.col("media.type").alias("media_type"),
+            F.col("media.url").alias("media_url")))
+
+    (flat.write.mode("overwrite")
+        .option("header", "true")
+        .option("quote", '"')
+        .option("escape", '"')
+        .option("quoteAll", "true")
+        .csv(OUT))
+
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+![результат в бакете](screens/task3_4.png)
+
+### 3.5 Демонстрация результата
+![задания в dataproc](screens/task3_5.png)
+![фрагмент плоской таблицы](screens/task3_6.png)
 
 ---
 
